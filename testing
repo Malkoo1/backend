@@ -1,0 +1,39 @@
+// backend/src/routes/file.routes.js
+const express = require('express');
+const fileController = require('../controllers/file.controller');
+const authMiddleware = require('../middleware/auth.middleware');
+const multer = require('multer'); // Import multer for file uploads
+
+const router = express.Router();
+
+// Multer setup for file uploads (using memory storage for this example)
+const upload = multer({ storage: multer.memoryStorage() }); // or diskStorage for file system
+
+// Protected route - only authenticated users can access for file uploads
+router.post('/upload', authMiddleware.authenticate, upload.single('file'), fileController.uploadFile);
+
+// Admin-only route - only admins can access for deleting files
+router.delete('/:fileId', authMiddleware.authenticate, authMiddleware.isAdmin, fileController.deleteFile);
+
+// Route that can be accessed by authenticated users (users and admins) for listing their files
+router.get('/user-files', authMiddleware.authenticate, authMiddleware.isUser, fileController.listFilesForUser); // Changed route path for clarity
+
+// Public route - no authentication required for getting file metadata
+router.get('/:fileId/metadata', fileController.getFileMetadata);
+
+// Public route - anyone can add comments (adjust authentication if needed)
+router.post('/:fileId/comments', fileController.addCommentToFile);
+
+// Public route - anyone can get comments for a file
+router.get('/:fileId/comments', fileController.getCommentsForFile);
+
+// Protected route - authenticated users can add replies to comments
+router.post('/:fileId/comments/:commentId/replies', authMiddleware.authenticate, authMiddleware.isUser, fileController.addReplyToComment); // Added auth for replies - adjust as needed
+
+// (Optional) Admin-only route - only admins can access for deleting comments
+router.delete('/:fileId/comments/:commentId', authMiddleware.authenticate, authMiddleware.isAdmin, fileController.deleteComment);
+
+// Protected route - only authenticated users can access for updating file metadata and related files
+router.patch('/:fileId', authMiddleware.authenticate, fileController.updateFile); // PATCH for updates
+
+module.exports = router;
