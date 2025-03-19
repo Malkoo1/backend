@@ -96,31 +96,6 @@ exports.login = async (req, res, next) => {
         const payload = { userId: user._id, role: user.role }; // Include user ID and role in payload
         const token = jwt.sign(payload, config.jwtSecret, { expiresIn: '1h' }); // Token expires in 1 hour (adjust as needed)
 
-        // Set JWT as an HttpOnly, Secure cookie
-        // res.cookie('authToken', token, {
-        //     httpOnly: true, // Make cookie HttpOnly (not accessible by JS)
-        //     secure: process.env.NODE_ENV === 'production', // Set to true in production (HTTPS only)
-        //     sameSite: 'Strict', // Recommended for CSRF protection
-        //     maxAge: 3600000, // Cookie expiration (e.g., 1 hour in milliseconds) - matches JWT expiry
-        //     path: '/', // Cookie valid for the entire domain
-        // });
-
-        // res.cookie('authToken', token, {
-        //     httpOnly: true,
-        //     secure: process.env.NODE_ENV === 'production',
-        //     sameSite: 'Lax',  // or 'None' for development ONLY
-        //     maxAge: 3600000,
-        //     path: '/',
-        // });
-
-
-        // res.cookie('authToken', token, {
-        //     httpOnly: true,
-        //     secure: process.env.NODE_ENV === 'production', // Set to false in development
-        //     sameSite: process.env.NODE_ENV === 'production' ? 'Strict' : 'Lax', // Use 'Lax' or 'None' in development
-        //     maxAge: 3600000,
-        //     path: '/',
-        // });
 
         // 6. Send Token in Response
         return res.json({ token: token }); // Send JWT to client
@@ -162,6 +137,68 @@ exports.verifyEmail = async (req, res, next) => {
     } catch (error) {
         console.error("Email verification error:", error);
         return next(error); // Error handling middleware
+    }
+};
+
+exports.updateMe = async (req, res, next) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ message: 'Unauthorized: User not authenticated.' });
+        }
+        const userId = req.user._id;
+        const { username, email, currentPassword, newPassword, confirmNewPassword } = req.body;
+        let avatarPath = req.file ? `/uploads/${req.file.filename}` : undefined;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Update username and email if provided
+        if (username) {
+            user.username = username;
+        }
+        if (email) {
+            const existingUserWithEmail = await User.findOne({ email: email, _id: { $ne: userId } });
+            if (existingUserWithEmail) {
+                return res.status(400).json({ message: 'Email already exists' });
+            }
+            user.email = email;
+        }
+
+        // Update avatar if a new file is uploaded
+        if (avatarPath) {
+            user.avatar = avatarPath;
+        }
+
+        // Handle password update if currentPassword and newPassword are provided
+        if (currentPassword && newPassword && confirmNewPassword) {
+            if (!user.passwordHash) { // Changed from user.password
+                return res.status(400).json({ message: 'Password cannot be changed as no password is set for this user.' });
+            }
+            const isPasswordValid = await bcrypt.compare(currentPassword, user.passwordHash); // Changed from user.password
+            if (!isPasswordValid) {
+                return res.status(400).json({ message: 'Invalid current password' });
+            }
+            if (newPassword !== confirmNewPassword) {
+                return res.status(400).json({ message: 'New password and confirm password do not match' });
+            }
+            if (newPassword.length < 6) {
+                return res.status(400).json({ message: 'New password must be at least 6 characters long' });
+            }
+            const hashedPassword = await bcrypt.hash(newPassword, 10);
+            user.passwordHash = hashedPassword; // Changed from user.password
+        }
+
+        user.updatedAt = Date.now();
+        await user.save();
+
+        const updatedUserWithoutPassword = await User.findById(userId).select('-passwordHash'); // Changed from -password
+        res.status(200).json({ success: true, user: updatedUserWithoutPassword });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Failed to update user profile' });
     }
 };
 
