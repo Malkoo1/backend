@@ -20,15 +20,6 @@ app.use(cookieParser());
 app.use(express.json());
 // Middleware setup
 
-// 1. CORS (Cross-Origin Resource Sharing)
-// Enable CORS for all origins in development.
-// In production, configure CORS more restrictively for security.
-// app.use(cors({
-//     origin: 'http://localhost:5173', // or specify your frontend URL(s) in production, e.g., ['http://localhost:3000', 'https://your-frontend-domain.com']
-//     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-//     credentials: true, // If you need to handle cookies or authorization headers across origins
-//     optionsSuccessStatus: 204, // Some legacy browsers or systems may require this
-// }));
 
 // 2. Body Parser Middleware
 // to parse JSON request bodies
@@ -36,13 +27,7 @@ app.use(bodyParser.json());
 // to parse URL-encoded request bodies (e.g., from forms)
 app.use(bodyParser.urlencoded({ extended: true })); // 'extended: true' allows for parsing rich objects and arrays in URL-encoded format
 
-// 3. (Optional) Logging Middleware - Example using Morgan (install: npm install morgan)
-// const morgan = require('morgan');
-// app.use(morgan('dev')); // 'dev' is a common format for development logging
 
-// 4. (Optional) Security Middleware - Example using Helmet (install: npm install helmet)
-// const helmet = require('helmet');
-// app.use(helmet()); // Enables a set of security-enhancing HTTP headers
 
 // API Routes - Mount your routes here
 app.use('/auth', authRoutes); // Routes for authentication (login, register, etc.)

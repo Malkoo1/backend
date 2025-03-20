@@ -29,7 +29,7 @@ const upload = multer({ storage: storage }); // or diskStorage for file system
 router.post('/upload', authMiddleware.authenticate, upload.array('files'), fileController.uploadMultipleFiles); // Changed to uploadMultipleFiles controller
 
 // Admin-only route - only admins can access for deleting files
-router.delete('/:fileId', authMiddleware.authenticate, authMiddleware.isAdmin, fileController.deleteFile);
+// router.delete('/:fileId', authMiddleware.authenticate, authMiddleware.isAdmin, fileController.deleteFile);
 
 // Route that can be accessed by authenticated users (users and admins) for listing their files
 router.get('/user-files', authMiddleware.authenticate, authMiddleware.isUser, fileController.listFilesForUser); // Changed route path for clarity
@@ -75,6 +75,11 @@ router.put('/document/:documentId/annotations/:annotationId/comments/:commentId'
 router.post('/documents/:documentId/approve', fileController.approveDocument);
 
 router.post('/share', authMiddleware.authenticate, fileController.shareFile);
+
+// router.get('/:file_id/emails', fileController.getSharedEmails);
+router.get("/:type/:file_id/emails", fileController.getSharedEmails);
+
+router.delete("/share", authMiddleware.authenticate, fileController.removeSharedAccess);
 
 module.exports = router;
 

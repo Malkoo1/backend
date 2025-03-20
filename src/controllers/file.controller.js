@@ -751,7 +751,7 @@ exports.shareFile = async (req, res) => {
         const sharedBy = req.user._id; // Retrieved from authentication middleware
 
         if (!resourceType || !resourceId || !shareEmails || !Array.isArray(shareEmails)) {
-            return res.status(400).json({ message: 'Missing required fields.' });
+            return res.status(400).json({ message: 'Missing required fields or invalid data format.' });
         }
 
         // Find the user who is sharing
@@ -778,13 +778,28 @@ exports.shareFile = async (req, res) => {
                 // Get folderId from the File model
                 const file = await File.findById(resourceId);
                 if (!file || !file.folderId) {
-                    return res.status(404).json({ message: 'File not found or has no folder associated.' });
+                    responseMessages.push(`File not found or has no associated folder.`);
+                    continue;
                 }
                 folderId = file.folderId;
             } else if (resourceType === 'folder') {
                 folderId = resourceId; // When sharing a folder, the resourceId is the folder ID
             }
 
+            // ✅ Check if this user is already shared in this file/folder
+            const existingShare = await Share.findOne({
+                resourceType,
+                resourceId: resourceType === 'file' ? resourceId : null,
+                folderId: folderId,
+                sharedWith: sharedWithUser._id,
+            });
+
+            if (existingShare) {
+                // responseMessages.push(`User with email ${email} is already shared.`);
+                continue; // Skip adding a duplicate record
+            }
+
+            // ✅ Create a new Share record only if not already shared
             const newShare = new Share({
                 resourceType,
                 resourceId: resourceType === 'file' ? resourceId : null, // Set resourceId only for files
@@ -795,12 +810,13 @@ exports.shareFile = async (req, res) => {
             });
 
             await newShare.save();
+            responseMessages.push(`User with email ${email} successfully shared.`);
         }
 
         // ✅ Send response only once at the end
         return res.status(201).json({
             message: 'Resource sharing process completed.',
-            details: responseMessages.length ? responseMessages : 'All users found and shared successfully.',
+            details: responseMessages.length ? responseMessages : 'File sharing process completed.',
         });
 
     } catch (error) {
@@ -810,5 +826,81 @@ exports.shareFile = async (req, res) => {
         if (!res.headersSent) {
             return res.status(500).json({ message: 'Failed to share resource.', error: error.message });
         }
+    }
+};
+
+
+exports.getSharedEmails = async (req, res) => {
+    try {
+        const { file_id, type } = req.params;
+
+        if (!file_id || !type) {
+            return res.status(400).json({ success: false, message: "Missing file ID or type", emails: [""] });
+        }
+
+        let filter = {};
+        if (type === "file") {
+            filter = { resourceType: "file", resourceId: file_id };
+        } else if (type === "folder") {
+            filter = { resourceType: "folder", folderId: file_id };
+        } else {
+            return res.status(400).json({ success: false, message: "Invalid resource type", emails: [""] });
+        }
+
+        // Find all share records based on type (file/folder)
+        const shares = await Share.find(filter).populate("sharedWith");
+
+        if (!shares || shares.length === 0) {
+            return res.json({ success: false, message: "No shares found.", emails: [""] });
+        }
+
+        // Extract email addresses of shared users
+        const emails = shares.map((share) => share.sharedWith.email);
+
+        return res.json({ success: true, emails });
+    } catch (error) {
+        console.error("Error fetching shared users' emails:", error);
+        return res.status(500).json({ success: false, message: "Internal server error", emails: [""] });
+    }
+};
+
+
+exports.removeSharedAccess = async (req, res) => {
+    try {
+        const { resourceType, resourceId, email } = req.body;
+
+        if (!resourceType || !resourceId || !email) {
+            return res.status(400).json({ message: "Missing required fields." });
+        }
+
+        // Find the user by email
+        const sharedWithUser = await User.findOne({ email });
+        if (!sharedWithUser) {
+            return res.status(404).json({ message: `User with email ${email} not found.` });
+        }
+
+        let filter = {};
+        if (resourceType === "file") {
+            filter = { resourceType: "file", resourceId };
+        } else if (resourceType === "folder") {
+            filter = { resourceType: "folder", folderId: resourceId }; // ✅ Use folderId
+        } else {
+            return res.status(400).json({ message: "Invalid resource type" });
+        }
+
+        // Find and delete the shared record
+        const deletedShare = await Share.findOneAndDelete({
+            ...filter,
+            sharedWith: sharedWithUser._id,
+        });
+
+        if (!deletedShare) {
+            return res.status(404).json({ message: "No shared record found for this email." });
+        }
+
+        return res.status(200).json({ message: `Access removed for ${email}.` });
+    } catch (error) {
+        console.error("Error removing shared access:", error);
+        return res.status(500).json({ message: "Failed to remove shared access.", error: error.message });
     }
 };
