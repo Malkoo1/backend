@@ -20,6 +20,9 @@ const AnnotationSchema = new mongoose.Schema({
     x: { type: Number, required: true },
     y: { type: Number, required: true },
     comments: [CommentSchema], // Array of comments
+    resolved: { type: Boolean, default: false }, // New field to track resolution status
+    resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }, // Admin who resolved the annotation
+    resolvedAt: { type: Date, default: null },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
 });
@@ -43,6 +46,15 @@ const ApprovalSchema = new mongoose.Schema({
     approvedAt: { type: Date, default: Date.now }, // Timestamp of approval
 });
 
+const AdditionalFileSchema = new mongoose.Schema({
+    name: { type: String, required: true }, // Name of the additional file
+    path: { type: String, required: true }, // Path of the additional file
+    size: { type: String, required: true }, // Size of the additional file
+    type: { type: String, required: true }, // Type of the additional file
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+});
+
 // File Schema
 const FileSchema = new mongoose.Schema({
     id: { type: Number, required: true, unique: true },
@@ -54,6 +66,7 @@ const FileSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true }, // Reference to User
     folderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Folder', required: true, index: true }, // Reference to Folder
     path: { type: String, required: true },
+    additionalFiles: [AdditionalFileSchema],
     versions: [VersionSchema], // Array of versions
     annotations: [AnnotationSchema], // Array of annotations
     approvals: [ApprovalSchema], // Array of approvals by users and guests

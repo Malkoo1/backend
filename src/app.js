@@ -9,7 +9,7 @@ const cookieParser = require("cookie-parser");
 const app = express();
 
 
-
+// http://localhost:5173
 app.use(
     cors({
         origin: "https://sato.identitytests.net", // Frontend URL

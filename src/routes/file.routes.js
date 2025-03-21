@@ -28,8 +28,7 @@ const upload = multer({ storage: storage }); // or diskStorage for file system
 // Protected route - only authenticated users can access for file uploads
 router.post('/upload', authMiddleware.authenticate, upload.array('files'), fileController.uploadMultipleFiles); // Changed to uploadMultipleFiles controller
 
-// Admin-only route - only admins can access for deleting files
-// router.delete('/:fileId', authMiddleware.authenticate, authMiddleware.isAdmin, fileController.deleteFile);
+
 
 // Route that can be accessed by authenticated users (users and admins) for listing their files
 router.get('/user-files', authMiddleware.authenticate, authMiddleware.isUser, fileController.listFilesForUser); // Changed route path for clarity
@@ -80,6 +79,12 @@ router.post('/share', authMiddleware.authenticate, fileController.shareFile);
 router.get("/:type/:file_id/emails", fileController.getSharedEmails);
 
 router.delete("/share", authMiddleware.authenticate, fileController.removeSharedAccess);
+
+router.put('/:fileId/annotations/:annotationId/resolve', authMiddleware.authenticate, authMiddleware.isAdmin, fileController.resolveAnnotation);
+// Admin-only route - only admins can access for deleting files
+router.delete('/admin/:fileId', authMiddleware.authenticate, authMiddleware.isAdmin, fileController.deleteFile);
+
+router.delete('/documents/:documentId/revoke', fileController.revokeApproval);
 
 module.exports = router;
 

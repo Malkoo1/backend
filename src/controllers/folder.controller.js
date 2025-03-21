@@ -27,22 +27,6 @@ exports.createFolder = async (req, res, next) => {
 };
 
 // 2. listFoldersForUser - Protected route
-// exports.listFoldersForUser = async (req, res, next) => {
-//     try {
-//         if (!req.user) {
-//             return res.status(401).json({ message: 'Unauthorized: User not authenticated.' });
-//         }
-
-//         const userId = req.user._id;
-//         const folders = await Folder.find({ userId: userId }); // Populate parent folder name
-
-//         res.json(folders);
-//     } catch (error) {
-//         console.error('Error listing folders for user:', error);
-//         next(error);
-//     }
-// };
-
 
 exports.listFoldersForUser = async (req, res, next) => {
     try {
@@ -62,19 +46,74 @@ exports.listFoldersForUser = async (req, res, next) => {
                 model: 'Folder' // Ensure this matches your Folder model name
             });
 
-        // Extract folder details from shared folders
-        const sharedFolderDetails = sharedFolders.map(share => share.folderId).filter(folder => folder !== null); // Filter out null values
+        // Extract folder details from shared folders and ensure uniqueness
+        const sharedFolderDetails = sharedFolders
+            .map(share => share.folderId)
+            .filter(folder => folder !== null); // Filter out null values
 
-        // Return separate objects
+        // Use a Set to deduplicate folders based on _id
+        const uniqueSharedFolders = [...new Set(sharedFolderDetails.map(folder => folder._id.toString()))]
+            .map(id => sharedFolderDetails.find(folder => folder._id.toString() === id));
+
+        // Return only the folders explicitly shared with the user
         res.json({
             userFolders,         // Folders owned by the user
-            sharedFolders: sharedFolderDetails // Folders shared with the user
+            sharedFolders: uniqueSharedFolders // Unique folders explicitly shared with the user
         });
     } catch (error) {
         console.error('Error listing folders for user:', error);
         next(error);
     }
 };
+
+// exports.listFoldersForUser = async (req, res, next) => {
+//     try {
+//         if (!req.user) {
+//             return res.status(401).json({ message: 'Unauthorized: User not authenticated.' });
+//         }
+
+//         const userId = req.user._id;
+
+//         // Find folders owned by the user
+//         const userFolders = await Folder.find({ userId });
+
+//         // Find shared folders where the user is the recipient
+//         const sharedFolders = await Share.find({ sharedWith: userId })
+//             .populate({
+//                 path: 'folderId',
+//                 model: 'Folder' // Ensure this matches your Folder model name
+//             });
+
+//         // Extract valid shared folder details
+//         const sharedFolderDetails = sharedFolders
+//             .map(share => share.folderId)
+//             .filter(folder => folder !== null); // Remove null values
+
+//         // Count occurrences of each folder ID in shared folders
+//         const folderCount = sharedFolderDetails.reduce((acc, folder) => {
+//             const id = folder._id.toString();
+//             acc[id] = (acc[id] || 0) + 1;
+//             return acc;
+//         }, {});
+
+//         // Keep only folders that appear **exactly once** (remove all duplicates)
+//         const uniqueSharedFolders = sharedFolderDetails.filter(folder => folderCount[folder._id.toString()] === 1);
+
+//         // Remove any shared folders that are already owned by the user
+//         const userFolderIds = new Set(userFolders.map(folder => folder._id.toString()));
+//         const filteredSharedFolders = uniqueSharedFolders.filter(folder => !userFolderIds.has(folder._id.toString()));
+
+//         // Return response
+//         res.json({
+//             userFolders,         // Folders owned by the user
+//             sharedFolders: filteredSharedFolders // Unique folders shared with the user, removing duplicates
+//         });
+//     } catch (error) {
+//         console.error('Error listing folders for user:', error);
+//         next(error);
+//     }
+// };
+
 
 // 3. getFolderById - Protected route
 exports.getFolderById = async (req, res, next) => {
@@ -112,49 +151,6 @@ exports.getFolderById = async (req, res, next) => {
     }
 };
 
-// exports.getFolderByIdWithSharedFiles = async (req, res, next) => {
-//     try {
-//         if (!req.user) {
-//             return res.status(401).json({ message: 'Unauthorized: User not authenticated.' });
-//         }
-
-//         const folderId = req.params.folderId;
-//         const userId = req.user._id;
-
-//         // Find the folder by ID
-//         const folder = await Folder.findById(folderId);
-//         if (!folder) {
-//             return res.status(404).json({ message: 'Folder not found.' });
-//         }
-
-//         // Check if the user owns the folder
-//         const isOwner = folder.userId.toString() === userId.toString();
-
-//         // Find shared records for this folder where the user is the recipient
-//         const sharedRecords = await Share.find({ folderId: folderId, sharedWith: userId });
-
-//         // Get shared file IDs if any
-//         const sharedFileIds = sharedRecords.map(record => record.resourceId).filter(id => id !== null);
-
-//         // Get user-owned files in the folder
-//         const userFiles = isOwner ? await File.find({ folderId }) : [];
-
-//         // Get shared files if the folder was shared
-//         const sharedFiles = sharedFileIds.length > 0 ? await File.find({ _id: { $in: sharedFileIds } }) : [];
-
-//         // Response with folder details, owned files, and shared files
-//         res.json({
-//             folder,
-//             isOwner,
-//             userFiles,
-//             sharedFiles
-//         });
-
-//     } catch (error) {
-//         console.error('Error getting folder by ID with shared files:', error);
-//         next(error);
-//     }
-// };
 
 exports.getFolderByIdWithSharedFiles = async (req, res, next) => {
     try {
@@ -189,13 +185,15 @@ exports.getFolderByIdWithSharedFiles = async (req, res, next) => {
         const sharedFileIds = sharedFileRecords.map(record => record.resourceId).filter(id => id !== null);
         const sharedFiles = sharedFileIds.length > 0 ? await File.find({ _id: { $in: sharedFileIds } }) : [];
 
-        // Combine all shared files
+        // Combine all shared files and remove duplicates using a Set
         const allSharedFiles = [...sharedFiles, ...sharedFilesFromFolders];
+        const uniqueSharedFiles = [...new Set(allSharedFiles.map(file => file._id.toString()))]
+            .map(id => allSharedFiles.find(file => file._id.toString() === id));
 
-        // Response with folder details and shared files only
+        // Response with folder details and unique shared files
         res.json({
             folder,
-            sharedFiles: allSharedFiles
+            sharedFiles: uniqueSharedFiles
         });
 
     } catch (error) {

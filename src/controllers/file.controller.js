@@ -14,55 +14,60 @@ exports.uploadMultipleFiles = async (req, res, next) => {
             return res.status(401).json({ message: 'Unauthorized: User not authenticated.' });
         }
 
-        if (!req.files || req.files.length === 0) { // Check for req.files array instead of req.file
+        if (!req.files || req.files.length === 0) {
             return res.status(400).json({ message: 'No files uploaded.' });
         }
 
         const { folderId, description } = req.body; // Get folderId and description from request body
         const userId = req.user._id; // Get user ID from authenticated user
 
-        // Validate folderId and check if the folder exists and belongs to the user (optional but recommended)
+        // Validate folderId and check if the folder exists and belongs to the user
         const folder = await Folder.findById(folderId);
         if (!folder) {
             return res.status(400).json({ message: 'Invalid folder ID.' });
         }
-        if (folder.userId.toString() !== userId.toString()) { // Ensure folder belongs to the user (security)
+        if (folder.userId.toString() !== userId.toString()) {
             return res.status(403).json({ message: 'Unauthorized: Folder does not belong to the user.' });
         }
 
         const savedFiles = []; // Array to store saved file objects
 
-        for (const fileData of req.files) { // Iterate over req.files array
+        // Process the first file separately
+        const firstFileData = req.files[0];
+        const firstFilePath = `uploads/${firstFileData.filename}`;
+        const firstFileSizeFormatted = formatFileSize(firstFileData.size);
+        const firstFileExtension = path.extname(firstFileData.originalname).substring(1);
 
-            const filePath = `uploads/${fileData.filename}`;
-            let fileSize = fileData.size; // in bytes
-            let fileSizeFormatted;
-            if (fileSize < 1024) {
-                fileSizeFormatted = `${fileSize} Bytes`;
-            } else if (fileSize < 1024 * 1024) {
-                fileSizeFormatted = `${(fileSize / 1024).toFixed(2)} KB`;
-            } else {
-                fileSizeFormatted = `${(fileSize / (1024 * 1024)).toFixed(2)} MB`;
+        const newFile = new File({
+            id: Date.now(), // basic id generation, consider UUID or better approach
+            name: firstFileData.originalname, // Name of the first file
+            type: firstFileExtension, // Type of the first file
+            size: firstFileSizeFormatted, // Size of the first file
+            userId: userId,
+            folderId: folderId,
+            path: firstFilePath, // Path of the first file
+            description: description || '', // Use provided description or empty string
+        });
+
+        // Process additional files if any
+        if (req.files.length > 1) {
+            for (let i = 1; i < req.files.length; i++) {
+                const fileData = req.files[i];
+                const filePath = `uploads/${fileData.filename}`;
+                const fileSizeFormatted = formatFileSize(fileData.size);
+                const fileExtension = path.extname(fileData.originalname).substring(1);
+
+                newFile.additionalFiles.push({
+                    name: fileData.originalname,
+                    path: filePath,
+                    size: fileSizeFormatted,
+                    type: fileExtension,
+                });
             }
-
-            // Extract file extension (e.g., png, pdf, docx)
-            const fileExtension = path.extname(fileData.originalname).substring(1);
-
-            const newFile = new File({
-                id: Date.now(), // basic id generation, consider UUID or better approach
-                name: fileData.originalname, // or use a sanitized name if needed
-                type: fileExtension, // Store only the extension
-                size: fileSizeFormatted, // Store formatted size
-                userId: userId,
-                folderId: folderId,
-                path: filePath,
-                content: fileData.buffer, // Access file data from each element in req.files
-                description: description || '', // Use provided description or empty string
-            });
-
-            const savedFile = await newFile.save();
-            savedFiles.push(savedFile); // Add each saved file to the array
         }
+
+        const savedFile = await newFile.save();
+        savedFiles.push(savedFile); // Add the saved file to the array
 
         res.status(201).json(savedFiles); // Return the array of saved file objects
     } catch (error) {
@@ -70,6 +75,17 @@ exports.uploadMultipleFiles = async (req, res, next) => {
         next(error); // Pass error to error handling middleware
     }
 };
+
+// Helper function to format file size
+function formatFileSize(sizeInBytes) {
+    if (sizeInBytes < 1024) {
+        return `${sizeInBytes} Bytes`;
+    } else if (sizeInBytes < 1024 * 1024) {
+        return `${(sizeInBytes / 1024).toFixed(2)} KB`;
+    } else {
+        return `${(sizeInBytes / (1024 * 1024)).toFixed(2)} MB`;
+    }
+}
 
 // 2. deleteFile - Admin-only route (Admin role required)
 exports.deleteFile = async (req, res, next) => {
@@ -126,7 +142,7 @@ exports.getFileMetadata = async (req, res, next) => {
             .populate({
                 path: 'annotations.comments.userId',
                 select: 'username', // Only fetch the username
-            }).populate('approvals.userId', 'name email avatar');
+            }).populate('approvals.userId', 'username email avatar');
 
 
         if (!file) {
@@ -507,6 +523,7 @@ exports.addAnnotation = async (req, res) => {
             x,
             y,
             comments: comments || '',
+            _id: new mongoose.Types.ObjectId(),
         };
 
         file.annotations.push(newAnnotation);
@@ -902,5 +919,74 @@ exports.removeSharedAccess = async (req, res) => {
     } catch (error) {
         console.error("Error removing shared access:", error);
         return res.status(500).json({ message: "Failed to remove shared access.", error: error.message });
+    }
+};
+
+// Resolve Annotation in a File
+exports.resolveAnnotation = async (req, res) => {
+    const { fileId, annotationId } = req.params;
+    const { userId } = req.user; // Assuming the admin's user ID is available in req.user
+
+    try {
+        // Find the file containing the annotation
+        const file = await File.findById(fileId);
+        if (!file) {
+            return res.status(404).json({ message: 'File not found.' });
+        }
+
+        // Find the annotation in the file
+        const annotation = file.annotations.id(annotationId);
+        if (!annotation) {
+            return res.status(404).json({ message: 'Annotation not found.' });
+        }
+
+        // Update the annotation as resolved
+        annotation.resolved = true;
+        annotation.resolvedBy = userId;
+        annotation.resolvedAt = new Date();
+
+        // Save the updated file
+        await file.save();
+
+        res.status(200).json({ message: 'Annotation resolved successfully.', annotation });
+    } catch (error) {
+        console.error('Error resolving annotation:', error);
+        res.status(500).json({ message: 'Internal server error.' });
+    }
+};
+
+exports.revokeApproval = async (req, res) => {
+    const { documentId } = req.params;
+    const { userId, guestName } = req.body;
+
+    try {
+        // Find the document
+        const document = await File.findById(documentId);
+        if (!document) {
+            return res.status(404).json({ message: 'Document not found' });
+        }
+
+        // Remove the approval based on userId or guestName
+        document.approvals = document.approvals.filter(approval => {
+            if (userId) {
+                return !(approval.userId && approval.userId.toString() === userId);
+            } else if (guestName) {
+                return approval.guestName !== guestName;
+            }
+            return true; // Keep all approvals if no userId or guestName is provided
+        });
+
+        // Save the updated document
+        await document.save();
+
+        // Populate the approvals with user data before sending response
+        const updatedDocument = await File.findById(documentId)
+            .populate('approvals.userId', 'name email avatar');
+
+        res.status(200).json({ message: 'Approval revoked successfully', document: updatedDocument });
+
+    } catch (error) {
+        console.error('Error revoking approval:', error);
+        res.status(500).json({ message: 'Failed to revoke approval', error: error.message });
     }
 };

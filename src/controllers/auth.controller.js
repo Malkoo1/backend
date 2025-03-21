@@ -37,13 +37,18 @@ exports.register = async (req, res, next) => {
             'bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500',
             'bg-purple-500', 'bg-pink-500', 'bg-indigo-500', 'bg-teal-500'
         ];
-        const randomAvatarColor = tailwindColors[Math.floor(Math.random() * tailwindColors.length)];
+        const randomAvatarColor = tailwindColors[Math.floor(Math.random() * tailwindColors.length)]; 4
+
+        // 5. Determine user role based on email domain
+        const emailDomain = email.split('@')[1]; // Extract domain from email
+        const role = emailDomain === 'sato-studio.at' ? 'admin' : 'user';
 
         // 5. Create new user (now including verification fields)
         const newUser = new User({
             username,
             email,
             passwordHash,
+            role,
             isEmailVerified: true, // Initially not verified
             emailVerificationToken: encryptedToken,
             emailVerificationTokenExpires: emailVerificationTokenExpires,
@@ -56,7 +61,12 @@ exports.register = async (req, res, next) => {
         // await emailUtils.sendVerificationEmail(email, verificationToken);
 
         // 7. Respond with success message (inform user to check email)
-        res.status(201).json({ message: 'User registered successfully. Please check your email to verify your account.' });
+        if (role === 'admin') {
+            res.status(201).json({ message: 'Admin user registered successfully.Please Login' });
+        } else {
+            res.status(201).json({ message: 'User registered successfully. Please check your email to verify your account.' });
+        }
+        // res.status(201).json({ message: 'User registered successfully. Please check your email to verify your account.' });
 
     } catch (error) {
         console.error("Registration controller error:", error);
