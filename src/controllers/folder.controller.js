@@ -2,6 +2,7 @@
 const Folder = require('../models/folder.model');
 const File = require('../models/file.model');
 const Share = require('../models/share.model');
+const User = require('../models/user.model');
 
 // 1. createFolder - Protected route
 exports.createFolder = async (req, res, next) => {
@@ -28,44 +29,6 @@ exports.createFolder = async (req, res, next) => {
 
 // 2. listFoldersForUser - Protected route
 
-exports.listFoldersForUser = async (req, res, next) => {
-    try {
-        if (!req.user) {
-            return res.status(401).json({ message: 'Unauthorized: User not authenticated.' });
-        }
-
-        const userId = req.user._id;
-
-        // Find folders owned by the user
-        const userFolders = await Folder.find({ userId });
-
-        // Find shared folders where the user is the recipient
-        const sharedFolders = await Share.find({ sharedWith: userId })
-            .populate({
-                path: 'folderId',
-                model: 'Folder' // Ensure this matches your Folder model name
-            });
-
-        // Extract folder details from shared folders and ensure uniqueness
-        const sharedFolderDetails = sharedFolders
-            .map(share => share.folderId)
-            .filter(folder => folder !== null); // Filter out null values
-
-        // Use a Set to deduplicate folders based on _id
-        const uniqueSharedFolders = [...new Set(sharedFolderDetails.map(folder => folder._id.toString()))]
-            .map(id => sharedFolderDetails.find(folder => folder._id.toString() === id));
-
-        // Return only the folders explicitly shared with the user
-        res.json({
-            userFolders,         // Folders owned by the user
-            sharedFolders: uniqueSharedFolders // Unique folders explicitly shared with the user
-        });
-    } catch (error) {
-        console.error('Error listing folders for user:', error);
-        next(error);
-    }
-};
-
 // exports.listFoldersForUser = async (req, res, next) => {
 //     try {
 //         if (!req.user) {
@@ -84,35 +47,136 @@ exports.listFoldersForUser = async (req, res, next) => {
 //                 model: 'Folder' // Ensure this matches your Folder model name
 //             });
 
-//         // Extract valid shared folder details
+//         // Extract folder details from shared folders and ensure uniqueness
 //         const sharedFolderDetails = sharedFolders
 //             .map(share => share.folderId)
-//             .filter(folder => folder !== null); // Remove null values
+//             .filter(folder => folder !== null); // Filter out null values
 
-//         // Count occurrences of each folder ID in shared folders
-//         const folderCount = sharedFolderDetails.reduce((acc, folder) => {
-//             const id = folder._id.toString();
-//             acc[id] = (acc[id] || 0) + 1;
-//             return acc;
-//         }, {});
+//         // Use a Set to deduplicate folders based on _id
+//         const uniqueSharedFolders = [...new Set(sharedFolderDetails.map(folder => folder._id.toString()))]
+//             .map(id => sharedFolderDetails.find(folder => folder._id.toString() === id));
 
-//         // Keep only folders that appear **exactly once** (remove all duplicates)
-//         const uniqueSharedFolders = sharedFolderDetails.filter(folder => folderCount[folder._id.toString()] === 1);
-
-//         // Remove any shared folders that are already owned by the user
-//         const userFolderIds = new Set(userFolders.map(folder => folder._id.toString()));
-//         const filteredSharedFolders = uniqueSharedFolders.filter(folder => !userFolderIds.has(folder._id.toString()));
-
-//         // Return response
+//         // Return only the folders explicitly shared with the user
 //         res.json({
 //             userFolders,         // Folders owned by the user
-//             sharedFolders: filteredSharedFolders // Unique folders shared with the user, removing duplicates
+//             sharedFolders: uniqueSharedFolders // Unique folders explicitly shared with the user
 //         });
 //     } catch (error) {
 //         console.error('Error listing folders for user:', error);
 //         next(error);
 //     }
 // };
+
+// exports.listFoldersForUser = async (req, res, next) => {
+//     try {
+//         // Check if the requesting user is authenticated
+//         if (!req.user) {
+//             return res.status(401).json({ message: 'Unauthorized: User not authenticated.' });
+//         }
+//         const userId = req.user._id;
+
+//         // Check if the requesting user has the role of 'admin'
+//         // if (req.user.role !== 'admin') {
+//         //     return res.status(403).json({ message: 'Forbidden: User does not have admin privileges.' });
+//         // }
+
+//         // Find all users with the role of 'admin'
+//         const adminUsers = await User.find({ role: 'admin' });
+
+//         // Extract the IDs of admin users
+//         const adminUserIds = adminUsers.map(user => user._id);
+
+//         // Find folders owned by admin users
+//         let userFolders = await Folder.find({ userId: { $in: adminUserIds } });
+
+//         // Find shared folders where admin users are the recipients
+//         const sharedFolders = await Share.find({ sharedWith: userId })
+//             .populate({
+//                 path: 'folderId',
+//                 model: 'Folder' // Ensure this matches your Folder model name
+//             });
+
+//         // Extract folder details from shared folders and ensure uniqueness
+//         const sharedFolderDetails = sharedFolders
+//             .map(share => share.folderId)
+//             .filter(folder => folder !== null); // Filter out null values
+
+//         // Use a Set to deduplicate folders based on _id
+//         const uniqueSharedFolders = [...new Set(sharedFolderDetails.map(folder => folder._id.toString()))]
+//             .map(id => sharedFolderDetails.find(folder => folder._id.toString() === id));
+
+//         // Return the folders owned by admin users and unique folders shared with them
+//         if (req.user.role !== 'admin') {
+//             userFolders = [];
+//             res.json({
+//                 userFolders,
+//                 sharedFolders: uniqueSharedFolders // Unique folders explicitly shared with admin users
+//             });
+//             // return res.status(403).json({ message: 'Forbidden: User does not have admin privileges.' });
+//         }
+//         // Folders owned by admin users
+//         res.json({
+//             userFolders,
+//             sharedFolders: uniqueSharedFolders // Unique folders explicitly shared with admin users
+//         });
+//     } catch (error) {
+//         console.error('Error listing folders for admin users:', error);
+//         next(error);
+//     }
+// };
+
+exports.listFoldersForUser = async (req, res, next) => {
+    try {
+        // Check if the requesting user is authenticated
+        if (!req.user) {
+            return res.status(401).json({ message: 'Unauthorized: User not authenticated.' });
+        }
+
+        const userId = req.user._id;
+
+        // Find all users with the role of 'admin'
+        const adminUsers = await User.find({ role: 'admin' });
+
+        // Extract the IDs of admin users
+        const adminUserIds = adminUsers.map(user => user._id);
+
+        // Find folders owned by admin users
+        let userFolders = await Folder.find({ userId: { $in: adminUserIds } });
+
+        // Find shared folders where admin users are the recipients
+        const sharedFolders = await Share.find({ sharedWith: userId })
+            .populate({
+                path: 'folderId',
+                model: 'Folder' // Ensure this matches your Folder model name
+            });
+
+        // Extract folder details from shared folders and ensure uniqueness
+        const sharedFolderDetails = sharedFolders
+            .map(share => share.folderId)
+            .filter(folder => folder !== null); // Filter out null values
+
+        // Use a Set to deduplicate folders based on _id
+        const uniqueSharedFolders = [...new Set(sharedFolderDetails.map(folder => folder._id.toString()))]
+            .map(id => sharedFolderDetails.find(folder => folder._id.toString() === id));
+
+        // If the user is not an admin, return only shared folders
+        if (req.user.role !== 'admin') {
+            return res.json({
+                userFolders: [], // No folders owned by non-admin users
+                sharedFolders: uniqueSharedFolders // Unique folders explicitly shared with the user
+            });
+        }
+
+        // If the user is an admin, return both admin folders and shared folders
+        res.json({
+            userFolders, // Folders owned by admin users
+            sharedFolders: uniqueSharedFolders // Unique folders explicitly shared with admin users
+        });
+    } catch (error) {
+        console.error('Error listing folders for admin users:', error);
+        next(error);
+    }
+};
 
 
 // 3. getFolderById - Protected route
@@ -130,9 +194,9 @@ exports.getFolderById = async (req, res, next) => {
         }
 
         // Authorization check: Ensure folder belongs to the user
-        if (folder.userId.toString() !== req.user._id.toString()) {
-            return res.status(403).json({ message: 'Unauthorized: Folder does not belong to the user.' });
-        }
+        // if (folder.userId.toString() !== req.user._id.toString()) {
+        //     return res.status(403).json({ message: 'Unauthorized: Folder does not belong to the user.' });
+        // }
 
         // Fetch files within the folder and populate folder data
         const files = await File.find({ folderId: folderId }).populate('folderId');
@@ -219,9 +283,9 @@ exports.updateFolder = async (req, res, next) => {
         }
 
         // Authorization check: Ensure folder belongs to the user
-        if (folderToUpdate.userId.toString() !== userId.toString()) {
-            return res.status(403).json({ message: 'Unauthorized: You do not have permission to update this folder.' });
-        }
+        // if (folderToUpdate.userId.toString() !== userId.toString()) {
+        //     return res.status(403).json({ message: 'Unauthorized: You do not have permission to update this folder.' });
+        // }
 
         // Basic validation for parentFolderId (optional - check if it exists and belongs to the same user)
         if (parentFolderId) {

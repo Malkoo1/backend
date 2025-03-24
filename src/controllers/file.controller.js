@@ -26,9 +26,9 @@ exports.uploadMultipleFiles = async (req, res, next) => {
         if (!folder) {
             return res.status(400).json({ message: 'Invalid folder ID.' });
         }
-        if (folder.userId.toString() !== userId.toString()) {
-            return res.status(403).json({ message: 'Unauthorized: Folder does not belong to the user.' });
-        }
+        // if (folder.userId.toString() !== userId.toString()) {
+        //     return res.status(403).json({ message: 'Unauthorized: Folder does not belong to the user.' });
+        // }
 
         const savedFiles = []; // Array to store saved file objects
 
@@ -43,7 +43,7 @@ exports.uploadMultipleFiles = async (req, res, next) => {
             name: firstFileData.originalname, // Name of the first file
             type: firstFileExtension, // Type of the first file
             size: firstFileSizeFormatted, // Size of the first file
-            userId: userId,
+            userId: folder.userId,
             folderId: folderId,
             path: firstFilePath, // Path of the first file
             description: description || '', // Use provided description or empty string
@@ -249,9 +249,9 @@ exports.updateFile = async (req, res, next) => {
         }
 
         // Authorization check: Ensure the file belongs to the logged-in user
-        if (fileToUpdate.userId.toString() !== userId.toString()) {
-            return res.status(403).json({ message: 'Unauthorized: You do not have permission to update this file.' });
-        }
+        // if (fileToUpdate.userId.toString() !== userId.toString()) {
+        //     return res.status(403).json({ message: 'Unauthorized: You do not have permission to update this file.' });
+        // }
 
         // Update only the description field if provided
         if (description) {
@@ -957,7 +957,7 @@ exports.resolveAnnotation = async (req, res) => {
 
 exports.revokeApproval = async (req, res) => {
     const { documentId } = req.params;
-    const { userId, guestName } = req.body;
+    const { userId, guestName } = req.body; // Get data from request body
 
     try {
         // Find the document
@@ -966,27 +966,40 @@ exports.revokeApproval = async (req, res) => {
             return res.status(404).json({ message: 'Document not found' });
         }
 
-        // Remove the approval based on userId or guestName
+        // Validate input
+        if (!userId && !guestName) {
+            return res.status(400).json({
+                message: 'Either userId or guestName must be provided'
+            });
+        }
+
+        // Remove the approval
         document.approvals = document.approvals.filter(approval => {
-            if (userId) {
-                return !(approval.userId && approval.userId.toString() === userId);
-            } else if (guestName) {
+            if (userId && approval.userId) {
+                return approval.userId.toString() !== userId;
+            } else if (guestName && approval.guestName) {
                 return approval.guestName !== guestName;
             }
-            return true; // Keep all approvals if no userId or guestName is provided
+            return true;
         });
 
-        // Save the updated document
+        // Save changes
         await document.save();
 
-        // Populate the approvals with user data before sending response
+        // Return updated document
         const updatedDocument = await File.findById(documentId)
             .populate('approvals.userId', 'name email avatar');
 
-        res.status(200).json({ message: 'Approval revoked successfully', document: updatedDocument });
+        res.status(200).json({
+            message: 'Approval revoked successfully',
+            document: updatedDocument
+        });
 
     } catch (error) {
         console.error('Error revoking approval:', error);
-        res.status(500).json({ message: 'Failed to revoke approval', error: error.message });
+        res.status(500).json({
+            message: 'Failed to revoke approval',
+            error: error.message
+        });
     }
 };

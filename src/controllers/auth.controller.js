@@ -19,10 +19,10 @@ exports.register = async (req, res, next) => {
         }
 
         // 2. Check if username already exists
-        const existingUser = await User.findOne({ username });
-        if (existingUser) {
-            return res.status(409).json({ message: 'Username already taken.' }); // 409 Conflict
-        }
+        // const existingUser = await User.findOne({ username });
+        // if (existingUser) {
+        //     return res.status(409).json({ message: 'Username already taken.' }); // 409 Conflict
+        // }
 
         // 3. Hash the password
         const saltRounds = 10;

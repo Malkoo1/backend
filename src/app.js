@@ -9,7 +9,7 @@ const cookieParser = require("cookie-parser");
 const app = express();
 
 
-// http://localhost:5173
+//https://sato.identitytests.net  http://localhost:5173
 app.use(
     cors({
         origin: "https://sato.identitytests.net", // Frontend URL
@@ -26,8 +26,6 @@ app.use(express.json());
 app.use(bodyParser.json());
 // to parse URL-encoded request bodies (e.g., from forms)
 app.use(bodyParser.urlencoded({ extended: true })); // 'extended: true' allows for parsing rich objects and arrays in URL-encoded format
-
-
 
 // API Routes - Mount your routes here
 app.use('/auth', authRoutes); // Routes for authentication (login, register, etc.)
