@@ -16,6 +16,6 @@ router.get('/share/:folderId', authMiddleware.authenticate, folderController.get
 router.patch('/:folderId', authMiddleware.authenticate, folderController.updateFolder);
 router.delete('/:folderId', authMiddleware.authenticate, folderController.deleteFolder);
 
-
+router.post("/generate-pdf", folderController.generatePDF);
 
 module.exports = router;

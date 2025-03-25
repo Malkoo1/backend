@@ -3,7 +3,8 @@ const Folder = require('../models/folder.model');
 const File = require('../models/file.model');
 const Share = require('../models/share.model');
 const User = require('../models/user.model');
-
+const puppeteer = require("puppeteer");
+const path = require("path");
 // 1. createFolder - Protected route
 exports.createFolder = async (req, res, next) => {
     try {
@@ -338,5 +339,90 @@ exports.deleteFolder = async (req, res, next) => {
     } catch (error) {
         console.error('Error deleting folder:', error);
         next(error);
+    }
+};
+
+exports.generatePDF = async (req, res) => {
+    let browser;
+    try {
+        const { html } = req.body;
+        if (!html) {
+            return res.status(400).json({ error: "HTML content is required." });
+        }
+
+        // Launch browser with more stable options
+        browser = await puppeteer.launch({
+            headless: "new",
+            args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage"
+            ],
+            timeout: 30000
+        });
+
+        const page = await browser.newPage();
+
+        // Configure page settings
+        await page.setDefaultNavigationTimeout(60000);
+        await page.setDefaultTimeout(30000);
+
+        // Set content with robust waiting
+        await page.setContent(html, {
+            waitUntil: ["load", "domcontentloaded", "networkidle0"],
+            timeout: 60000
+        });
+
+        // Handle images and external resources
+        await page.evaluate(async () => {
+            const images = Array.from(document.querySelectorAll('img'));
+            await Promise.all(images.map(img => {
+                if (img.complete) return;
+                return new Promise((resolve) => {
+                    img.addEventListener('load', resolve);
+                    img.addEventListener('error', resolve); // Continue even if images fail
+                });
+            }));
+        });
+
+        // Additional rendering time
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Generate PDF with better options
+        const pdfBuffer = await page.pdf({
+            format: 'A4',
+            printBackground: true,
+            margin: {
+                top: '20mm',
+                right: '20mm',
+                bottom: '20mm',
+                left: '20mm'
+            },
+            preferCSSPageSize: true
+        });
+
+        await browser.close();
+
+        // Verify PDF was generated
+        if (!pdfBuffer || pdfBuffer.length === 0) {
+            throw new Error("Generated PDF is empty");
+        }
+
+        // Send response
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename=document.pdf',
+            'Content-Length': pdfBuffer.length
+        });
+        return res.send(pdfBuffer);
+
+    } catch (error) {
+        console.error('PDF Generation Error:', error);
+        if (browser) await browser.close();
+        return res.status(500).json({
+            success: false,
+            error: 'Failed to generate PDF',
+            message: error.message
+        });
     }
 };

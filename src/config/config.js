@@ -10,6 +10,8 @@ module.exports = {
     smtpPassword: process.env.SMTP_PASSWORD,
     emailFrom: process.env.EMAIL_FROM || 'noreply@yourdomain.com',
 
+    frontBaseUrl: process.env.Front_BASE_URL || 'http://localhost:3000',
+
     // MongoDB Configuration
     mongoURI: process.env.mongoURI,
     // If using MongoDB Atlas, replace with your Atlas connection string:

@@ -3,6 +3,13 @@ const authController = require('../controllers/auth.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 const multer = require('multer');
 const path = require('path');
+// const AWS = require('aws-sdk');
+
+// const s3 = new AWS.S3({
+//     accessKeyId: process.env.AWS_ACCESS_KEY,
+//     secretAccessKey: process.env.AWS_SECRET_KEY,
+//     region: 'eu-central-1'
+// });
 
 // Set up storage to save files in "uploads/" directory
 const storage = multer.diskStorage({
@@ -16,6 +23,8 @@ const storage = multer.diskStorage({
     }
 });
 
+// const storage = multer.memoryStorage();
+
 const router = express.Router();
 
 const upload = multer({ storage: storage });
@@ -23,6 +32,8 @@ const upload = multer({ storage: storage });
 router.post('/register', authController.register);
 router.post('/login', authController.login);
 router.get('/verify-email/:token', authController.verifyEmail); // New verification route
+
+router.post('/resend-verification', authController.resendVerificationEmail);
 
 router.put('/me', authMiddleware.authenticate, upload.single('avatar'), authController.updateMe);
 

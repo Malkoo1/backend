@@ -474,8 +474,12 @@ exports.uploadMultipleVersionsFile = async (req, res, next) => {
             }
         };
 
+        let lastId = fileDoc.versions.length > 0
+            ? fileDoc.versions[fileDoc.versions.length - 1].id
+            : 0;
+        // id: fileDoc.versions.length + index + 1,
         const newVersions = files.map((file, index) => ({
-            id: fileDoc.versions.length + index + 1,
+            id: lastId + 1,
             name: file.originalname,
             path: file.path,
             size: formatFileSize(parseInt(file.size)),
