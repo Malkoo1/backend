@@ -28,7 +28,7 @@ const sendEmail = async (to, subject, html) => {
     }
 };
 
-exports.sendVerificationEmail = async (email, verificationToken) => {
+const sendVerificationEmail = async (email, verificationToken) => {
     try {
         // const verificationLink = `${config.appBaseUrl}/auth/verify-email/${verificationToken}`;
 
@@ -159,7 +159,7 @@ exports.sendVerificationEmail = async (email, verificationToken) => {
     }
 };
 
-exports.sendPasswordResetEmail = async (email, resetToken) => {
+const sendPasswordResetEmail = async (email, resetToken) => {
     try {
         const resetLink = `${config.frontBaseUrl}/reset-password/${resetToken}`;
 
@@ -255,4 +255,6 @@ module.exports = {
     sendDesignApprovedNotification,
     sendDesignCommentedNotification,
     sendNewVersionNotification,
+    sendVerificationEmail,
+    sendPasswordResetEmail,
 };
