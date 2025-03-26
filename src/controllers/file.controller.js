@@ -5,6 +5,7 @@ const User = require('../models/user.model');
 const Share = require('../models/share.model');
 const mongoose = require('mongoose');
 const path = require('path');
+const emailUtils = require('../utils/email');
 
 
 // 1. uploadFile - Protected route (Authenticated users only)
@@ -176,61 +177,6 @@ exports.getCommentsForFile = async (req, res, next) => {
 
 
 // 8. updateFile - Protected route (Authenticated users only)
-// exports.updateFile = async (req, res, next) => {
-//     try {
-//         if (!req.user) { // Authentication check
-//             return res.status(401).json({ message: 'Unauthorized: User not authenticated.' });
-//         }
-
-//         const fileId = req.params.fileId;
-//         const { name, description, folderId, versions } = req.body; // Get fields to update from request body
-//         const userId = req.user._id; // Authenticated user's ID
-
-//         const fileToUpdate = await File.findById(fileId);
-//         if (!fileToUpdate) {
-//             return res.status(404).json({ message: 'File not found.' });
-//         }
-
-//         // Authorization check: Ensure the file belongs to the logged-in user (or admin - adjust logic if needed)
-//         if (fileToUpdate.userId.toString() !== userId.toString()) {
-//             return res.status(403).json({ message: 'Unauthorized: You do not have permission to update this file.' });
-//         }
-
-//         // Validate folderId and check if the folder exists and belongs to the user (optional but recommended if changing folders)
-//         if (folderId) { // Only validate folder if folderId is provided in the update request
-//             const folder = await Folder.findById(folderId);
-//             if (!folder) {
-//                 return res.status(400).json({ message: 'Invalid folder ID.' });
-//             }
-//             if (folder.userId.toString() !== userId.toString()) {
-//                 return res.status(403).json({ message: 'Unauthorized: Folder does not belong to the user.' });
-//             }
-//             fileToUpdate.folderId = folderId; // Update folderId if valid
-//         }
-
-
-//         // Update fields if provided in the request
-//         if (name) {
-//             fileToUpdate.name = name;
-//         }
-//         if (description) {
-//             fileToUpdate.description = description;
-//         }
-//         if (versions && Array.isArray(versions)) {
-//             fileToUpdate.versions = versions; // consider logic to merge or replace versions based on your needs
-//         }
-
-
-//         fileToUpdate.updatedAt = Date.now(); // Update updatedAt timestamp
-
-//         const updatedFile = await fileToUpdate.save();
-
-//         res.json(updatedFile); // Return the updated file object
-//     } catch (error) {
-//         console.error('Error updating file:', error);
-//         next(error); // Pass error to error handling middleware
-//     }
-// };
 
 exports.updateFile = async (req, res, next) => {
 
@@ -491,6 +437,18 @@ exports.uploadMultipleVersionsFile = async (req, res, next) => {
         await fileDoc.save();
 
         res.status(200).json({ message: 'Files uploaded successfully', versions: newVersions });
+        // ✅ Send notification email to registered users the file was shared with
+        const shares = await Share.find({ resourceType: 'file', resourceId: fileId }).populate('sharedWith', 'email');
+
+        if (shares && shares.length > 0) {
+            for (const share of shares) {
+                if (share.sharedWith && share.sharedWith.email) {
+                    await emailUtils.sendNewVersionNotification(share.sharedWith.email, fileDoc.name);
+                }
+            }
+        } else {
+            console.log(`File ${fileId} is not shared with any users, so no new version notification sent.`);
+        }
     } catch (error) {
         res.status(500).json({ message: 'Internal Server Error', error: error.message });
         next(error);
@@ -557,7 +515,7 @@ exports.addCommentToAnnotation = async (req, res) => {
     }
 
     try {
-        const file = await File.findById(documentId);
+        const file = await File.findById(documentId).populate('userId', 'email name');
         if (!file) {
             return res.status(404).json({ message: 'Document not found' });
         }
@@ -600,6 +558,13 @@ exports.addCommentToAnnotation = async (req, res) => {
         const populatedComment = populatedAnnotation.comments.find(c => c.id === newComment.id);
 
         res.status(201).json(populatedComment);
+
+        // ✅ Send notification email to the admin who uploaded the design
+        if (file.userId && file.userId.email) {
+            await emailUtils.sendDesignCommentedNotification(file.userId.email, file.name, text.trim());
+        } else {
+            console.warn(`Could not send comment notification for document ${documentId}: Uploader information missing.`);
+        }
 
         // res.status(201).json(newComment);
     } catch (error) {
@@ -719,7 +684,7 @@ exports.approveDocument = async (req, res) => {
 
     try {
         // Find the document
-        const document = await File.findById(documentId);
+        const document = await File.findById(documentId).populate('userId', 'email name');;
         if (!document) {
             return res.status(404).json({ message: 'Document not found' });
         }
@@ -758,6 +723,12 @@ exports.approveDocument = async (req, res) => {
 
         res.status(200).json({ message: 'Approval saved successfully', document: updatedDocument });
 
+        if (document.userId && document.userId.email) {
+            await emailUtils.sendDesignApprovedNotification(document.userId.email, document.name);
+        } else {
+            console.warn(`Could not send approval notification for document ${documentId}: Uploader information missing.`);
+        }
+
     } catch (error) {
         console.error('Error saving approval:', error);
         res.status(500).json({ message: 'Failed to save approval', error: error.message });
@@ -794,6 +765,8 @@ exports.shareFile = async (req, res) => {
             }
 
             let folderId = null;
+            let resourceName = '';
+
 
             if (resourceType === 'file') {
                 // Get folderId from the File model
@@ -803,8 +776,15 @@ exports.shareFile = async (req, res) => {
                     continue;
                 }
                 folderId = file.folderId;
+                resourceName = file.name;
             } else if (resourceType === 'folder') {
                 folderId = resourceId; // When sharing a folder, the resourceId is the folder ID
+                const folder = await Folder.findById(resourceId);
+                if (!folder) {
+                    responseMessages.push(`Folder not found.`);
+                    continue;
+                }
+                resourceName = folder.name;
             }
 
             // ✅ Check if this user is already shared in this file/folder
@@ -832,6 +812,8 @@ exports.shareFile = async (req, res) => {
 
             await newShare.save();
             responseMessages.push(`User with email ${email} successfully shared.`);
+            // ✅ Send notification email
+            await emailUtils.sendDesignSharedNotification(sharedWithUser.email, resourceName, sharingUser.username);
         }
 
         // ✅ Send response only once at the end

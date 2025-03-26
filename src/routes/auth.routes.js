@@ -35,6 +35,10 @@ router.get('/verify-email/:token', authController.verifyEmail); // New verificat
 
 router.post('/resend-verification', authController.resendVerificationEmail);
 
+router.post('/forgot-password', authController.forgotPassword); // New route for forgot password
+
+router.post('/reset-password/:token', authController.resetPassword); // New route for actual password reset
+
 router.put('/me', authMiddleware.authenticate, upload.single('avatar'), authController.updateMe);
 
 

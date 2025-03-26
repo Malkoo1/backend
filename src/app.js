@@ -12,7 +12,7 @@ const app = express();
 //https://sato.identitytests.net  http://localhost:5173
 app.use(
     cors({
-        origin: "https://sato.identitytests.net", // Frontend URL
+        origin: "http://localhost:5173", // Frontend URL
         credentials: true, // Allow sending cookies
     })
 );

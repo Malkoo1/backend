@@ -297,6 +297,198 @@ exports.verifyEmail = async (req, res, next) => {
     }
 };
 
+exports.forgotPassword = async (req, res, next) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({ message: 'Email is required.' });
+        }
+
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({ message: 'No user found with this email address.' });
+        }
+
+        // Generate a unique reset token
+        const resetToken = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        const encryptedResetToken = CryptoJS.AES.encrypt(resetToken, encryptionSecret).toString();
+
+        // Set password reset token and expiry (1 hour)
+        user.passwordResetToken = encryptedResetToken;
+        user.passwordResetTokenExpires = Date.now() + 60 * 60 * 1000; // 1 hour
+
+        await user.save();
+
+        // Send password reset email
+        await emailUtils.sendPasswordResetEmail(user.email, resetToken);
+
+        res.status(200).json({ message: 'Password reset link sent to your email.' });
+
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        next(error);
+    }
+};
+
+// exports.resetPassword = async (req, res, next) => {
+//     try {
+//         const { token } = req.params;
+//         const { password, confirmPassword } = req.body;
+
+//         if (!token) {
+//             return res.status(400).json({ message: 'Invalid reset link.' });
+//         }
+
+//         if (!password || !confirmPassword) {
+//             return res.status(400).json({ message: 'Please enter a new password and confirm it.' });
+//         }
+
+//         if (password !== confirmPassword) {
+//             return res.status(400).json({ message: 'Passwords do not match.' });
+//         }
+
+//         if (password.length < 6) {
+//             return res.status(400).json({ message: 'Password must be at least 6 characters long.' });
+//         }
+
+//         // Decrypt the token
+//         let decryptedToken;
+//         try {
+//             decryptedToken = CryptoJS.AES.encrypt(token, encryptionSecret).toString();
+
+
+//             // decryptedToken = CryptoJS.AES.decrypt(
+//             //     user.emailVerificationToken,
+//             //     encryptionSecret
+//             // ).toString(CryptoJS.enc.Utf8);
+//             // const bytes = CryptoJS.AES.decrypt(token, encryptionSecret);
+//             // decryptedToken = bytes.toString(CryptoJS.enc.Utf8);
+//             if (!decryptedToken) {
+//                 return res.status(400).json({ message: 'Invalid reset link.' });
+//             }
+//         } catch (error) {
+//             return res.status(400).json({ message: 'Invalid reset link.' });
+//         }
+
+//         console.log('Password decrepted:', decryptedToken);
+
+//         const user = await User.findOne({
+//             passwordResetToken: decryptedToken, // Use the encrypted token for lookup
+//             passwordResetTokenExpires: { $gt: Date.now() },
+//         });
+
+//         if (!user) {
+//             return res.status(400).json({ message: 'Invalid or expired reset link.' });
+//         }
+
+//         // Hash the new password
+//         const hashedPassword = await bcrypt.hash(password, 10);
+
+//         // Update user's password and clear reset token fields
+//         user.passwordHash = hashedPassword;
+//         user.passwordResetToken = undefined;
+//         user.passwordResetTokenExpires = undefined;
+//         user.updatedAt = Date.now();
+
+//         await user.save();
+
+//         res.status(200).json({ message: 'Password reset successfully. You can now log in.' });
+
+//     } catch (error) {
+//         console.error('Reset password error:', error);
+//         next(error);
+//     }
+// };
+
+exports.resetPassword = async (req, res, next) => {
+    try {
+        const { token } = req.params;
+        const { password, confirmPassword } = req.body;
+
+        if (!token) {
+            return res.status(400).json({ message: 'Invalid reset link.' });
+        }
+
+        if (!password || !confirmPassword) {
+            return res.status(400).json({ message: 'Please enter a new password and confirm it.' });
+        }
+
+        if (password !== confirmPassword) {
+            return res.status(400).json({ message: 'Passwords do not match.' });
+        }
+
+        if (password.length < 6) {
+            return res.status(400).json({ message: 'Password must be at least 6 characters long.' });
+        }
+
+        // First find users with unexpired tokens
+        const users = await User.find({
+            passwordResetTokenExpires: { $gt: Date.now() },
+            passwordResetToken: { $exists: true }
+        }).select('passwordResetToken');
+
+        let matchedUser = null;
+
+        for (const user of users) {
+            try {
+                const decryptedToken = CryptoJS.AES.decrypt(
+                    user.passwordResetToken,
+                    encryptionSecret
+                ).toString(CryptoJS.enc.Utf8);
+
+                if (decryptedToken === token) {
+                    matchedUser = user;
+                    break; // Found our user, exit loop
+                }
+            } catch (err) {
+                console.error("Decryption error for user:", user.email, err);
+                continue; // Skip to next user if decryption fails
+            }
+        }
+
+        if (!matchedUser) {
+            // Check if token exists but is expired
+            const expiredUser = await User.findOne({
+                passwordResetToken: { $exists: true },
+                passwordResetTokenExpires: { $lte: Date.now() }
+            });
+
+            if (expiredUser) {
+                return res.status(400).json({
+                    message: "Password reset link has expired. Please request a new one.",
+                    code: "TOKEN_EXPIRED"
+                });
+            }
+
+            return res.status(400).json({ message: 'Invalid reset link.', code: "INVALID_TOKEN" });
+        }
+
+        // Hash the new password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Update user's password and clear reset token fields
+        const updatedUser = await User.findByIdAndUpdate(
+            matchedUser._id,
+            {
+                $set: { passwordHash: hashedPassword },
+                $unset: { passwordResetToken: 1, passwordResetTokenExpires: 1 }
+            },
+            { new: true }
+        );
+
+        if (!updatedUser) {
+            return res.status(500).json({ message: 'Failed to update password.' });
+        }
+
+        res.status(200).json({ message: 'Password reset successfully. You can now log in.' });
+
+    } catch (error) {
+        console.error('Reset password error:', error);
+        next(error);
+    }
+};
 exports.updateMe = async (req, res, next) => {
     try {
         if (!req.user) {
